@@ -23,6 +23,8 @@ public class Maze_Generator : MonoBehaviour
 	class Room
 	{
 		public static Room SPAWN_ROOM;
+		public static Vector2Int DIMM_MAX;
+		public static Vector2Int DIMM_MIN;
 
 		public Room north = null;
 		public Room east = null;
@@ -32,6 +34,8 @@ public class Maze_Generator : MonoBehaviour
 		TileType _tileType;
 		Vector2Int _grid_pos;
 
+		int _num_paths;
+
 		bool _isBuilt = false;
 		bool _searched = false;
 		bool _dead_end = false;
@@ -40,12 +44,37 @@ public class Maze_Generator : MonoBehaviour
 		{
 			_tileType = t;
 			_grid_pos = pos;
+
+			if (pos.x > DIMM_MAX.x)
+				DIMM_MAX.x = pos.x;
+			else if(pos.x < DIMM_MIN.x)
+				DIMM_MIN.x = pos.x;
+			if (pos.y > DIMM_MAX.y)
+				DIMM_MAX.y = pos.y;
+			else if (pos.y < DIMM_MIN.y)
+				DIMM_MIN.y = pos.y;
+
+			if (_tileType == TileType.SPAWN || _tileType == TileType.END)
+				_num_paths = 1;
 		}
 
 		public Room(Vector2Int pos)
 		{
 			_tileType = 0;
 			_grid_pos = pos;
+
+			if (pos.x > DIMM_MAX.x)
+				DIMM_MAX.x = pos.x;
+			else if (pos.x < DIMM_MIN.x)
+				DIMM_MIN.x = pos.x;
+			if (pos.y > DIMM_MAX.y)
+				DIMM_MAX.y = pos.y;
+			else if (pos.y < DIMM_MIN.y)
+				DIMM_MIN.y = pos.y;
+
+			_num_paths = Random.Range(0, 5);
+			if (_num_paths < 2)
+				_num_paths = 2;
 		}
 
 		public Room Find(Vector2 pos, Direction enter = Direction.NONE) {
@@ -76,6 +105,11 @@ public class Maze_Generator : MonoBehaviour
 			return _searched;
 		}
 
+		public int GetNumPaths()
+		{
+			return _num_paths;
+		}
+
 		public bool isDeadEnd()
 		{
 			return _dead_end;
@@ -86,6 +120,138 @@ public class Maze_Generator : MonoBehaviour
 			_dead_end = true;
 		}
 
+		public void SetTileType(TileType t)
+		{
+			switch (t)
+			{
+				case TileType.END:
+				case TileType.SPAWN:
+					_num_paths = 1;
+					break;
+				case TileType.CHECKPOINT:
+					_num_paths = (_num_paths < 4) ? _num_paths + 1 : 4;
+					break;
+			}
+			_tileType = t;
+		}
+
+		public Room Simple_Travel(int distance, int move = 0)
+		{
+			if (move == distance)
+				return this;
+
+			_searched = true;
+
+			Room trav = null;
+			if (north != null && !north.Searched())
+				trav = north;
+			else if (east != null && !east.Searched())
+				trav = east;
+			else if (south != null && !south.Searched())
+				trav = south;
+			else if (west != null && !west.Searched())
+				trav = west;
+
+			Room ret = null;
+
+			if (trav != null)
+			{
+				ret = trav.Simple_Travel(distance, move + 1);
+				_searched = false;
+				return ret;
+			}
+			else
+			{
+				_searched = false;
+				return null;
+			}
+		}
+
+		public void RecursiveGen(int limit, int travelled = 0)
+		{
+			_isBuilt = true;
+			while (limit > 0 && (_num_paths - ActivePaths()) > 0 && PossiblePaths() > 0)
+			{
+				int r = Random.Range(0, 4);
+				Vector2Int new_room_pos;
+
+				switch (r)
+				{
+					default:
+					case 0:
+						new_room_pos = _grid_pos + new Vector2Int(0, 1);
+						break;
+					case 1:
+						new_room_pos = _grid_pos + new Vector2Int(1, 0);
+						break;
+					case 2:
+						new_room_pos = _grid_pos + new Vector2Int(0, -1);
+						break;
+					case 3:
+						new_room_pos = _grid_pos + new Vector2Int(-1, 0);
+						break;
+				}
+
+				Room found = Room.SPAWN_ROOM.Find(new_room_pos);
+
+				if (found == null)
+				{
+					Room new_r = new Room(new_room_pos);
+
+					switch (r)
+					{
+						default:
+						case 0: // North
+							north = new_r;
+							north.south = this;
+
+							break;
+						case 1: // East
+							east = new_r;
+							east.west = this;
+
+							break;
+						case 2: // South
+							south = new_r;
+							south.north = this;
+
+							break;
+						case 3: // West
+							west = new_r;
+							west.east = this;
+
+							break;
+					}
+
+					int rand = Random.Range(0, 4);
+					int closest = SearchClosest(TileType.CHECKPOINT);
+					if (rand == 0 && closest > 4)
+					{
+						new_r.SetTileType(TileType.CHECKPOINT);
+					}
+				}
+			}
+
+
+			if (north != null && !north.IsBuilt()) {
+				north.RecursiveGen(limit - 1, travelled + 1);
+			}
+			if (east != null && !east.IsBuilt())
+			{
+				east.RecursiveGen(limit - 1, travelled + 1);
+			}
+			if (south != null && !south.IsBuilt())
+			{
+				south.RecursiveGen(limit - 1, travelled + 1);
+			}
+			if (west != null && !west.IsBuilt())
+			{
+				west.RecursiveGen(limit - 1, travelled + 1);
+			}
+
+			_isBuilt = false;
+		}
+
 		public void Build(Maze_Generator gen, Direction enter = Direction.NONE)
 		{
 			_isBuilt = true;
@@ -93,6 +259,8 @@ public class Maze_Generator : MonoBehaviour
 			Vector3 pos = new Vector3(_grid_pos.x * 10, 5.0f, _grid_pos.y * 10);
 			Vector3 rot = new Vector3();
 			Queue<Direction> build_queue = new Queue<Direction>();
+
+			int rand;
 
 			switch (_tileType) {
 				case TileType.END:
@@ -125,11 +293,13 @@ public class Maze_Generator : MonoBehaviour
 
 					break;
 				case TileType.CHECKPOINT:
+					rand = Random.Range(0, 4);
+					rot.y = 90.0f * rand;
 					GameObject.Instantiate(gen.CHECKPOINT_TILE, pos, Quaternion.Euler(rot));
 					break;
 				case TileType.UNDEFINED:
 				default:
-					int rand = Random.Range(0, 4);
+					rand = Random.Range(0, 4);
 					rot.y = 90.0f * rand;
 					GameObject.Instantiate(gen.BLANK_TILE, pos, Quaternion.Euler(rot));
 					break;
@@ -251,6 +421,123 @@ public class Maze_Generator : MonoBehaviour
 			return count;
 
 		}
+
+		public int ActivePaths() {
+			int count = 0;
+			if (north != null)
+				count++;
+			if (east != null)
+				count++;
+			if (south != null)
+				count++;
+			if (west != null)
+				count++;
+
+			return count;
+		}
+
+		// Search Functions
+		public int SearchClosest(TileType t)
+		{
+			if (_tileType == t)
+				return 0;
+			_searched = true;
+			int n, e, s, w;
+			n = e = s = w = 100;
+			if (north != null && !north.Searched())
+				n = north.SearchClosest(t);
+			if (east != null && !east.Searched())
+				e = east.SearchClosest(t);
+			if (south != null && !south.Searched())
+				s = south.SearchClosest(t);
+			if (west != null && !west.Searched())
+				w = west.SearchClosest(t);
+
+			int min = (n < e) ? n : e;
+			min = (min < s) ? min : s;
+			min = (min < w) ? min : w;
+
+			_searched = false;
+			return min + 1;
+		}
+
+		public Vector2Int SearchMax()
+		{
+			_searched = true;
+
+			Vector2Int hold;
+
+			hold = new Vector2Int(int.MinValue, int.MinValue);
+
+			Vector2Int ret = new Vector2Int(_grid_pos.x, _grid_pos.y);
+
+			if (north != null && !north.Searched())
+			{
+				hold = north.SearchMax();
+				ret.x = (ret.x > hold.x) ? ret.x : hold.x;
+				ret.y = (ret.y > hold.y) ? ret.y : hold.y;
+			}
+			if (east != null && !east.Searched())
+			{
+				hold = east.SearchMax();
+				ret.x = (ret.x > hold.x) ? ret.x : hold.x;
+				ret.y = (ret.y > hold.y) ? ret.y : hold.y;
+			}
+			if (south != null && !south.Searched())
+			{
+				hold = south.SearchMax();
+				ret.x = (ret.x > hold.x) ? ret.x : hold.x;
+				ret.y = (ret.y > hold.y) ? ret.y : hold.y;
+			}
+			if (west != null && !west.Searched())
+			{
+				hold = west.SearchMax();
+				ret.x = (ret.x > hold.x) ? ret.x : hold.x;
+				ret.y = (ret.y > hold.y) ? ret.y : hold.y;
+			}
+
+			_searched = false;
+			return ret;
+		}
+
+		public Vector2Int SearchMin()
+		{
+			_searched = true;
+
+			Vector2Int hold;
+
+			hold = new Vector2Int(int.MaxValue, int.MaxValue);
+
+			Vector2Int ret = new Vector2Int(_grid_pos.x, _grid_pos.y);
+
+			if (north != null && !north.Searched())
+			{
+				hold = north.SearchMax();
+				ret.x = (ret.x < hold.x) ? ret.x : hold.x;
+				ret.y = (ret.y < hold.y) ? ret.y : hold.y;
+			}
+			if (east != null && !east.Searched())
+			{
+				hold = east.SearchMax();
+				ret.x = (ret.x < hold.x) ? ret.x : hold.x;
+				ret.y = (ret.y < hold.y) ? ret.y : hold.y;
+			}
+			if (south != null && !south.Searched())
+			{
+				hold = south.SearchMax();
+				ret.x = (ret.x < hold.x) ? ret.x : hold.x;
+				ret.y = (ret.y < hold.y) ? ret.y : hold.y;
+			}
+			if (west != null && !west.Searched())
+			{
+				hold = west.SearchMax();
+				ret.x = (ret.x < hold.x) ? ret.x : hold.x;
+				ret.y = (ret.y < hold.y) ? ret.y : hold.y;
+			}
+
+			_searched = false;
+			return ret;
+		}
 	}
 
 	public GameObject SPAWN_TILE;
@@ -259,11 +546,12 @@ public class Maze_Generator : MonoBehaviour
 	public GameObject CHECKPOINT_TILE;
 	public GameObject END_TILE;
 
-	private static int MIN_PATH = 20;
+	private static int MIN_PATH = 30;
 	private static Vector2Int MAZE_DIMM = new Vector2Int(40, 40);
 	private static int NUM_CHECKPOINTS = 5;
 
 	private Room Spawn;
+	private Room End;
 	private Room cur_room;
 
     // Start is called before the first frame update
@@ -324,6 +612,11 @@ public class Maze_Generator : MonoBehaviour
 					if (c == MIN_PATH)
 					{
 						new_r = new Room(TileType.END, new_room_pos);
+						End = new_r;
+					}
+					else if (c % 5 == 0 && c != 0)
+					{
+						new_r.SetTileType(TileType.CHECKPOINT);
 					}
 
 					switch (r)
@@ -369,6 +662,39 @@ public class Maze_Generator : MonoBehaviour
 			}
 			
 		}
+
+		Room Rec_start = null;
+
+		if (Spawn.north != null)
+		{
+			Rec_start = Spawn.north;
+		}
+		else if (Spawn.east != null)
+		{
+			Rec_start = Spawn.east;
+		}
+		else if (Spawn.south != null)
+		{
+			Rec_start = Spawn.south;
+		}
+		else if (Spawn.west != null)
+		{
+			Rec_start = Spawn.west;
+		}
+
+		if(Rec_start != null)
+			Rec_start.RecursiveGen(MIN_PATH / 2);
+
+		Room extra_start = End.Simple_Travel(6);
+		extra_start.RecursiveGen(MIN_PATH / 5);
+
+		Vector2Int dimm_max = Spawn.SearchMax();
+		Vector2Int dimm_min = Spawn.SearchMin();
+
+		Debug.Log(Spawn.GetPos().ToString());
+		Debug.Log(Room.DIMM_MAX.ToString());
+		Debug.Log(Room.DIMM_MIN.ToString());
+
 		Spawn.Build(this, Direction.NONE);
 	}
 
