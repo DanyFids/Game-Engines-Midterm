@@ -72,8 +72,8 @@ public class CheckpointTimerScript : MonoBehaviour
         
     }
 
-	private void OnDestroy()
-	{
-		_Reset();
-	}
+	//private void OnDestroy()
+	//{
+	//	_Reset();
+	//}
 }
