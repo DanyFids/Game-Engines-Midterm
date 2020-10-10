@@ -14,6 +14,8 @@ public class VictoryTriggerBehavior : MonoBehaviour
 		{
 			checkpoint_manager._SaveCheckpointTime();
 
+			Cursor.lockState = CursorLockMode.None;
+
 			SceneManager.MoveToResults();
 		}
 	}

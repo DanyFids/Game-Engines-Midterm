@@ -82,7 +82,7 @@ public class PlayerScript : MonoBehaviour
 	public void Respawn() {
 		controller.enabled = false;
 		transform.position = spawn_point.position;
-		cam_behavior.SetRot(0.0f, spawn_point.rotation.ToEuler().y);
+		cam_behavior.SetRot(0.0f, spawn_point.rotation.eulerAngles.y);
 		controller.enabled = true;
 	}
 }

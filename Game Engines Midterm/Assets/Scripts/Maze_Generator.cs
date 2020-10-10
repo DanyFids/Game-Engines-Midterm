@@ -8,7 +8,12 @@ public class Maze_Generator : MonoBehaviour
 		UNDEFINED,
 		SPAWN,
 		END,
-		CHECKPOINT
+		CHECKPOINT,
+		PIT,
+		PLATFORM,
+		MOVE_PLAT,
+		WALL_1,
+		WALL_2
 	}
 
 	enum Direction
@@ -23,6 +28,8 @@ public class Maze_Generator : MonoBehaviour
 	class Room
 	{
 		public static Room SPAWN_ROOM;
+		private static Room[,] MAP = null;
+		public static int NUM_AVAILABLE_TILES { get; private set; }
 		public static Vector2Int DIMM_MAX;
 		public static Vector2Int DIMM_MIN;
 
@@ -223,7 +230,7 @@ public class Maze_Generator : MonoBehaviour
 							break;
 					}
 
-					int rand = Random.Range(0, 4);
+					int rand = Random.Range(0, 6);
 					int closest = SearchClosest(TileType.CHECKPOINT);
 					if (rand == 0 && closest > 4)
 					{
@@ -263,6 +270,7 @@ public class Maze_Generator : MonoBehaviour
 			int rand;
 
 			switch (_tileType) {
+				// Stage 1 Tiles
 				case TileType.END:
 				case TileType.SPAWN:
 					if (north != null)
@@ -286,17 +294,82 @@ public class Maze_Generator : MonoBehaviour
 						build_queue.Enqueue(Direction.WEST);
 					}
 
-					if(_tileType == TileType.SPAWN)
+					if (_tileType == TileType.SPAWN)
+					{
+						gen.SPAWN_TILE.transform.Find("Player").GetComponent<CharacterController>().enabled = false;
 						gen.SPAWN_TILE.transform.SetPositionAndRotation(pos, Quaternion.Euler(rot));
+						gen.SPAWN_TILE.transform.Find("Player").GetComponent<CharacterController>().enabled = true;
+					}
 					else
 						gen.END_TILE.transform.SetPositionAndRotation(pos, Quaternion.Euler(rot));
 
 					break;
-				case TileType.CHECKPOINT:
+
+				// Stage 2 Tiles
+				case TileType.PIT:
 					rand = Random.Range(0, 4);
 					rot.y = 90.0f * rand;
-					GameObject.Instantiate(gen.CHECKPOINT_TILE, pos, Quaternion.Euler(rot));
+					GameObject.Instantiate(gen.PIT_TILE, pos, Quaternion.Euler(rot));
 					break;
+				case TileType.PLATFORM:
+					rand = Random.Range(0, 4);
+					rot.y = 90.0f * rand;
+					GameObject.Instantiate(gen.PLATFORM_TILE, pos, Quaternion.Euler(rot));
+					break;
+				case TileType.MOVE_PLAT:
+					rand = Random.Range(0, 4);
+					rot.y = 90.0f * rand;
+					GameObject.Instantiate(gen.MOV_PLAT_TILE, pos, Quaternion.Euler(rot));
+					break;
+				case TileType.WALL_1:
+					if (north != null && south != null)
+					{
+						if (east != null)
+							rot.y = 90.0f;
+						else
+							rot.y = -90.0f;
+					}
+					else
+					{
+						if (north != null)
+							rot.y = 0.0f;
+						else
+							rot.y = 180.0f;
+					}
+
+					GameObject.Instantiate(gen.WALL_TILE_1, pos, Quaternion.Euler(rot));
+					break;
+				case TileType.CHECKPOINT:
+				case TileType.WALL_2:
+					Room r = null;
+					do {
+						rand = Random.Range(0, 4);
+
+						switch (rand)
+						{
+							case 0: // north
+								r = north;
+								break;
+							case 1: // east
+								r = east;
+								break;
+							case 2: // south
+								r = south;
+								break;
+							case 3: // west
+								r = west;
+								break;
+						}
+					} while (r == null);
+					rot.y = 90.0f * rand;
+
+					if(_tileType == TileType.CHECKPOINT)
+						GameObject.Instantiate(gen.CHECKPOINT_TILE, pos, Quaternion.Euler(rot));
+					else
+						GameObject.Instantiate(gen.WALL_TILE_2, pos, Quaternion.Euler(rot));
+					break;
+
+				// Default Tile
 				case TileType.UNDEFINED:
 				default:
 					rand = Random.Range(0, 4);
@@ -422,6 +495,65 @@ public class Maze_Generator : MonoBehaviour
 
 		}
 
+		public void BuildMap()
+		{
+			if (MAP == null)
+			{
+				int width = DIMM_MAX.x - DIMM_MIN.x + 1;
+				int height = DIMM_MAX.y - DIMM_MIN.y + 1;
+
+				MAP = new Room[width, height];
+
+				NUM_AVAILABLE_TILES = 0;
+
+				for (int i = 0; i < width; i++)
+				{
+					for (int j = 0; j < height; j++)
+					{
+						MAP[i, j] = null;
+					}
+				}
+			}
+
+			_searched = true;
+
+			Vector2Int room_to_map = _grid_pos - DIMM_MIN;
+			if (_tileType == TileType.UNDEFINED)
+				NUM_AVAILABLE_TILES++;
+
+			MAP[room_to_map.x, room_to_map.y] = this;
+
+			if (north != null && !north.Searched())
+				north.BuildMap();
+			if (east != null && !east.Searched())
+				east.BuildMap();
+			if (south != null && !south.Searched())
+				south.BuildMap();
+			if (west != null && !west.Searched())
+				west.BuildMap();
+
+			_searched = false;
+		}
+
+		public static Room RandRoom()
+		{
+			Room ret = null;
+
+			if (MAP != null)
+			{
+				while (ret == null)
+				{
+					Vector2Int pos = new Vector2Int(Random.Range(DIMM_MIN.x, DIMM_MAX.x + 1), Random.Range(DIMM_MIN.y, DIMM_MAX.y + 1));
+					ret = Room.SearchMap(pos);
+
+					if (ret != null && ret._tileType != TileType.UNDEFINED)
+						ret = null;
+				}
+			}
+
+			return ret;
+		}
+
 		public int ActivePaths() {
 			int count = 0;
 			if (north != null)
@@ -459,6 +591,20 @@ public class Maze_Generator : MonoBehaviour
 
 			_searched = false;
 			return min + 1;
+		}
+
+		public static Room SearchMap(Vector2Int pos)
+		{
+			if (MAP != null)
+			{
+				Vector2Int room_to_map = pos - DIMM_MIN;
+
+				return MAP[room_to_map.x, room_to_map.y];
+			}
+			else
+			{
+				return null;
+			}
 		}
 
 		public Vector2Int SearchMax()
@@ -538,6 +684,13 @@ public class Maze_Generator : MonoBehaviour
 			_searched = false;
 			return ret;
 		}
+
+		public static void RESET()
+		{
+			MAP = null;
+			DIMM_MAX = new Vector2Int(int.MinValue, int.MinValue);
+			DIMM_MIN = new Vector2Int(int.MaxValue, int.MaxValue);
+		}
 	}
 
 	public GameObject SPAWN_TILE;
@@ -545,10 +698,15 @@ public class Maze_Generator : MonoBehaviour
 	public GameObject WALL;
 	public GameObject CHECKPOINT_TILE;
 	public GameObject END_TILE;
+	public GameObject PIT_TILE;
+	public GameObject PLATFORM_TILE;
+	public GameObject MOV_PLAT_TILE;
+	public GameObject WALL_TILE_1;
+	public GameObject WALL_TILE_2;
 
-	private static int MIN_PATH = 30;
+	private static int MIN_PATH = 20;
 	private static Vector2Int MAZE_DIMM = new Vector2Int(40, 40);
-	private static int NUM_CHECKPOINTS = 5;
+	private static int NUM_CHECKPOINTS = 4;
 
 	private Room Spawn;
 	private Room End;
@@ -564,6 +722,8 @@ public class Maze_Generator : MonoBehaviour
 		Room.SPAWN_ROOM = Spawn;
 
 		cur_room = Spawn;
+
+		// Generation Part 1 'Path' and 'Bloat'
 		for (int c = 0; c < MIN_PATH+1; c++)
 		{
 			while (cur_room.PossiblePaths() <= 0)
@@ -614,7 +774,7 @@ public class Maze_Generator : MonoBehaviour
 						new_r = new Room(TileType.END, new_room_pos);
 						End = new_r;
 					}
-					else if (c % 5 == 0 && c != 0)
+					else if (c % NUM_CHECKPOINTS == 0 && c != 0)
 					{
 						new_r.SetTileType(TileType.CHECKPOINT);
 					}
@@ -688,14 +848,85 @@ public class Maze_Generator : MonoBehaviour
 		Room extra_start = End.Simple_Travel(6);
 		extra_start.RecursiveGen(MIN_PATH / 5);
 
-		Vector2Int dimm_max = Spawn.SearchMax();
-		Vector2Int dimm_min = Spawn.SearchMin();
+		//Debug.Log(Spawn.GetPos().ToString());
+		//Debug.Log(Room.DIMM_MAX.ToString());
+		//Debug.Log(Room.DIMM_MIN.ToString());
+		//Debug.Log((Room.DIMM_MAX - Room.DIMM_MIN).ToString());
 
-		Debug.Log(Spawn.GetPos().ToString());
-		Debug.Log(Room.DIMM_MAX.ToString());
-		Debug.Log(Room.DIMM_MIN.ToString());
+		Spawn.BuildMap();
+
+		//Debug.Log(Room.NUM_AVAILABLE_TILES + " Rooms available." );
+
+		// Generation Part 2 - Funky tile time!
+		int Max_Gen = Room.NUM_AVAILABLE_TILES / 10;
+		int Min_Gen = Room.NUM_AVAILABLE_TILES / 20;
+		
+		//pits
+		int num_pits = Random.Range(Min_Gen, Max_Gen);
+		while (num_pits > 0)
+		{
+			Room r = Room.RandRoom();
+			if (r.SearchClosest(TileType.SPAWN) < 3 || r.SearchClosest(TileType.END) < 3)
+				continue;
+
+			r.SetTileType(TileType.PIT);
+			num_pits--;
+		}
+
+		int num_platformer = Random.Range(Min_Gen, Max_Gen);
+		while (num_platformer > 0)
+		{
+			Room r = Room.RandRoom();
+			if (r.SearchClosest(TileType.SPAWN) < 3 || r.SearchClosest(TileType.END) < 3)
+				continue;
+
+			r.SetTileType(TileType.PLATFORM);
+			num_platformer--;
+		}
+
+		int num_moving_plat = Random.Range(Min_Gen, Max_Gen);
+		while (num_moving_plat > 0)
+		{
+			Room r = Room.RandRoom();
+			if (r.SearchClosest(TileType.SPAWN) < 3 || r.SearchClosest(TileType.END) < 3)
+				continue;
+
+			r.SetTileType(TileType.MOVE_PLAT);
+			num_moving_plat--;
+		}
+
+		int num_moving_wall_1 = Random.Range(Min_Gen, Max_Gen);
+		while (num_moving_wall_1 > 0)
+		{
+			Room r = Room.RandRoom();
+			if (r.SearchClosest(TileType.SPAWN) < 3 || r.SearchClosest(TileType.END) < 3)
+				continue;
+
+			if (r.ActivePaths() > 2)
+			{
+				r.SetTileType(TileType.WALL_1);
+			}
+
+			num_moving_wall_1--;
+		}
+
+		int num_moving_wall_2 = Random.Range(Min_Gen, Max_Gen);
+		while (num_moving_wall_2 > 0)
+		{
+			Room r = Room.RandRoom();
+			if (r.SearchClosest(TileType.SPAWN) < 3 || r.SearchClosest(TileType.END) < 3)
+				continue;
+
+			r.SetTileType(TileType.WALL_2);
+			num_moving_wall_2--;
+		}
 
 		Spawn.Build(this, Direction.NONE);
+	}
+
+	private void OnDestroy()
+	{
+		Room.RESET();
 	}
 
 	bool OutOfBounds(Vector2Int pos)

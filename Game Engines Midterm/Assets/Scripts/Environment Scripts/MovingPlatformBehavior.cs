@@ -22,17 +22,19 @@ public class MovingPlatformBehavior : MonoBehaviour
 		back = false;
 		t = 0.0f;
 
-		player = GameObject.Find("Player");
+		player = GameObject.Find("Spawn_Tile").transform.Find("Player").gameObject;
     }
 
 	private void OnTriggerEnter(Collider other)
 	{
-		move_player = true;
+		if(other.gameObject == player)
+			move_player = true;
 	}
 
 	private void OnTriggerExit(Collider other)
 	{
-		move_player = false;
+		if(other.gameObject == player)
+			move_player = false;
 	}
 
 	// Update is called once per frame
